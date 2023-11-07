@@ -1,175 +1,193 @@
 import Phaser from 'phaser';
 
 export class LevelWoods extends Phaser.Scene {
-	constructor(scene, screenWidth, screenHeight, collisionGroup, edgeBlocks) {
-		super('LevelWoods');
-		this.scene = scene;
-
-		this.screenWidth = screenWidth;
-		this.screenHeight = screenHeight;
-		this.collisionGroup = collisionGroup;
-		this.edgeBlocks = edgeBlocks;
-
-		this.placeCollisionBlocks = this.placeCollisionBlocks.bind(this);
-		this.createBlocks = this.createBlocks.bind(this);
-		this.preload = this.preload.bind(this);
+	constructor() {
+		super('levelWoods');
+		this.screenHeight = 400; // replace with your actual value
+		this.FLAT_AREA_THRESHOLD = 5; // replace with your actual value
+		this.blockSize = 24; // replace with your actual value
+		this.BLOCK_TYPE = 15; // replace with your actual value
+		this.DISPLAY_SIZE_OFFSET = 5; // replace with your actual value
+		this.collisionBlocks = []; // Initialize the collisionBlocks array
 	}
 
-	preload() {
-		const levelContext = require.context(
-			'./assets/oak_woods/',
-			false,
-			/\.(png)$/
-		);
+	createBlock(x, y, key, frame, size) {
+		const block = this.physics.add.sprite(x, y, key, frame);
+		block.setDisplaySize(size, size);
+		block.setOrigin(0, 0);
+		block.setImmovable(true);
+		block.body.allowGravity = false;
+		return block;
+	}
 
-		this.load.spritesheet(
-			'blocks',
-			levelContext('oak_woods_tileset_Custom.png'),
-			{
-				frameWidth: 24,
-				frameHeight: 24,
+	createTerrain() {
+		const groundLevel = this.screenHeight - 20;
+		const terrainWidth = 100;
+
+		// Create the ground blocks
+		let currentY = groundLevel;
+		const groundBlocks = [];
+		for (let i = 0; i < terrainWidth; i++) {
+			// Decide randomly whether to create a flat area or a hill
+			if (Math.random() < 0.5) {
+				// Create a flat area: keep the y-coordinate the same for a certain number of blocks
+				if (i > 0 && i % this.FLAT_AREA_THRESHOLD === 0) {
+					currentY =
+						groundLevel +
+						Math.floor(Math.random() * this.blockSize) -
+						this.blockSize / 2;
+				}
+			} else {
+				// Create a hill: add a random offset to the y-coordinate
+				currentY +=
+					Math.floor(Math.random() * this.blockSize) -
+					this.blockSize / 2;
 			}
-		);
-	}
 
-	// Method to place blocks in random areas in the level
-	placeCollisionBlocks() {
-		const minBlockCount = 10;
-		const maxBlockCount = 20;
+			groundBlocks.push(currentY);
 
-		const blockCount =
-			Math.floor(Math.random() * (maxBlockCount - minBlockCount + 1)) +
-			minBlockCount;
-
-		const blockTexturesArray = [0, 1, 2, 3]; // where each number corresponds to a frame in your spritesheet
-
-		for (let i = 0; i < blockCount; i++) {
-			const randomX = Math.floor(Math.random() * this.screenWidth);
-			const randomY = Math.floor(Math.random() * this.screenHeight);
-
-			let blockTexture =
-				blockTexturesArray[
-					Math.floor(Math.random() * blockTexturesArray.length)
-				]; // random texture from array
-
-			this.createBlocks(
+			const block = this.createBlock(
+				i * this.blockSize,
+				currentY,
+				'blocks',
 				1,
-				1,
-				{ x: randomX, y: randomY },
-				undefined,
-				undefined,
-				blockTexture
+				this.blockSize + this.DISPLAY_SIZE_OFFSET
 			);
-		}
-	}
 
-	createBlocks(repeatX, repeatY, location, size, blockType, blockTexture) {
-		const blockSize = size || { width: 24, height: 24 };
+			this.addCollisionBlock(block);
 
-		for (let i = 0; i < repeatX; i++) {
-			for (let j = 0; j < repeatY; j++) {
-				let blockX = location.x + i * blockSize.width;
-				let blockY = location.y + j * blockSize.height;
-
-				let block = this.collisionGroup.create(
-					blockX,
-					blockY,
-					'blocks'
+			// Fill the empty space under the ground block with other blocks
+			for (
+				let j = currentY + this.blockSize;
+				j < this.screenHeight + 10;
+				j += this.blockSize
+			) {
+				const block = this.createBlock(
+					i * this.blockSize,
+					j,
+					'blocks',
+					this.BLOCK_TYPE,
+					this.blockSize + this.DISPLAY_SIZE_OFFSET
 				);
-
-				// Set the texture based on the Y location
-				if (blockTexture === undefined) {
-					throw new Error('Block texture is undefined');
-				} else {
-					if (blockY < 200) {
-						block.setFrame(0);
-					}
-					if (blockY >= 200 && blockY < 400) {
-						block.setFrame(1);
-					}
-					if (blockY >= 400) {
-						block.setFrame(2);
-					}
-				}
-
-				block.body.setAllowGravity(false);
-				block.body.immovable = true;
-
-				if (repeatX === 1) {
-					if (j === 0) this.edgeBlocks.push(block); // top edge for vertical walls
-					if (j === repeatY - 1) this.edgeBlocks.push(block); // bottom edge for vertical walls
-				} else if (repeatY === 1) {
-					if (i === 0) this.edgeBlocks.push(block); // left edge for horizontal platforms
-					if (i === repeatX - 1) this.edgeBlocks.push(block); // right edge for horizontal platforms
-				}
+				this.addCollisionBlock(block);
 			}
 		}
+
+		// Create platforms
+		const platformWidth = Math.floor(Math.random() * 2) + 3;
+		const platformCount = 10;
+		const platforms = []; // Array to store the created platforms
+
+		for (let i = 0; i < platformCount; i++) {
+			let x, y;
+			let isOverlapping = true;
+
+			// Keep generating random coordinates until a non-overlapping position is found
+			while (isOverlapping) {
+				x = Math.floor(Math.random() * (terrainWidth - platformWidth));
+				y = groundLevel - (50 + Math.random() * 150);
+
+				// Check if the new platform overlaps with any existing platforms
+				isOverlapping = platforms.some((platform) => {
+					const minX = platform.x - platform.width;
+					const maxX = platform.x + platform.width;
+					const minY = platform.y - platform.height;
+					const maxY = platform.y + platform.height;
+
+					return x >= minX && x <= maxX && y >= minY && y <= maxY;
+				});
+			}
+
+			// set edge blocks texture for the platform edges
+			const leftEdge = this.createBlock(
+				x * this.blockSize - 24,
+				y,
+				'blocks',
+				0,
+				this.blockSize
+			);
+			const rightEdge = this.createBlock(
+				(x + platformWidth) * this.blockSize,
+				y,
+				'blocks',
+				3,
+				this.blockSize
+			);
+
+			// add collision blocks to the edge blocks
+			this.addCollisionBlock(leftEdge);
+			this.addCollisionBlock(rightEdge);
+
+			for (let j = 0; j < platformWidth; j++) {
+				const block = this.createBlock(
+					(x + j) * this.blockSize,
+					y,
+					'blocks',
+					1,
+					this.blockSize
+				);
+				this.addCollisionBlock(block);
+			}
+
+			// Store the created platform in the platforms array
+			platforms.push({
+				x: x * this.blockSize,
+				y: y,
+				width: platformWidth * this.blockSize,
+				height: this.blockSize,
+			});
+		}
 	}
 
-	parallaxBackground() {
+	createParallaxBackground() {
 		// Add the background images
-		this.background1 = this.scene.add.tileSprite(
-			0,
-			0,
-			1280,
-			720,
-			'background1'
-		);
-		this.background2 = this.scene.add.tileSprite(
-			0,
-			0,
-			1280,
-			720,
-			'background2'
-		);
-		this.background3 = this.scene.add.tileSprite(
-			0,
-			0,
-			1280,
-			720,
-			'background3'
-		);
+		this.background1 = this.add
+			.tileSprite(
+				0,
+				0,
+				this.cameras.main.width,
+				this.cameras.main.height,
+				'background1'
+			)
+			.setOrigin(0, 0)
+			.setScale(2); // Adjust the scale as needed
 
-		// Set the origin of the background images to the top left corner
-		this.background1.setOrigin(0, 0);
-		this.background2.setOrigin(0, 0);
-		this.background3.setOrigin(0, 0);
+		this.background2 = this.add
+			.tileSprite(
+				0,
+				0,
+				this.cameras.main.width,
+				this.cameras.main.height,
+				'background2'
+			)
+			.setOrigin(0, 0)
+			.setScale(2); // Adjust the scale as needed
 
-		// Calculate the necessary scaling factor for the screen's width and height
-		let scaleY = this.scene.cameras.main.height / 720;
-		let scaleX = this.scene.cameras.main.width / 1280;
-
-		// You can use whichever is the larger factor. Do note that this could distort your image.
-		let scale = Math.max(scaleX, scaleY);
-
-		// Apply the scaling factor to each image
-		this.background1.setScale(scale);
-		this.background2.setScale(scale);
-		this.background3.setScale(scale);
+		this.background3 = this.add
+			.tileSprite(
+				0,
+				0,
+				this.cameras.main.width,
+				this.cameras.main.height,
+				'background3'
+			)
+			.setOrigin(0, 0)
+			.setScale(2); // Adjust the scale as needed
 
 		// Set the depth position of the background images
-		this.background1.setDepth(-2);
-		this.background2.setDepth(-1);
-		this.background3.setDepth(0);
+		this.background1.setDepth(-100);
+		this.background2.setDepth(-99);
+		this.background3.setDepth(-98);
+	}
 
-		// Set the tile position of the background images
-		this.background1.tilePositionX = this.scene.cameras.main.scrollX * 0.1;
-		this.background2.tilePositionX = this.scene.cameras.main.scrollX * 0.2;
-		this.background3.tilePositionX = this.scene.cameras.main.scrollX * 0.3;
+	addCollisionBlock(block) {
+		this.collisionBlocks.push(block);
 	}
 
 	create() {
-		// Call the method to create the parallax background
-		this.parallaxBackground();
-		// Set the tile position of the background images
-		this.background1.tilePositionX = this.scene.cameras.main.scrollX * 0.1;
-		this.background2.tilePositionX = this.scene.cameras.main.scrollX * 0.2;
-		this.background3.tilePositionX = this.scene.cameras.main.scrollX * 0.3;
-		// Call the method to place the blocks in the level
-		this.placeCollisionBlocks();
+		console.log('levelWoods created from levelWoods.js');
 
-		// The rest of your code from create() method goes here...
+		this.createTerrain();
+		this.createParallaxBackground();
 	}
-
-	/* You can also modify the update() method if you want to apply any updates and checks to your blocks */
 }

@@ -14,6 +14,8 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 		this.hangingBlock = null;
 		this.grabCooldownDuration = 2000;
 		this.lastGrabTime = 0;
+		this.knightHealth = 100;
+		this.isAttacking = false; // Add an isAttacking flag
 
 		this.initializeKnight();
 		this.initializeControls();
@@ -140,6 +142,7 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 		this.knight.play('knightIdle', true);
 
 		this.knight.setDepth(10);
+		this.createPlayerUI();
 	}
 
 	initializeControls() {
@@ -149,6 +152,7 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 			W: Phaser.Input.Keyboard.KeyCodes.W,
 			S: Phaser.Input.Keyboard.KeyCodes.S,
 			SHIFT: Phaser.Input.Keyboard.KeyCodes.SHIFT,
+			SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
 		});
 
 		this.moveKeys.SHIFT.on('down', () => {
@@ -192,7 +196,19 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 
 		const directionMultiplier = this.knight.flipX ? -1 : 1;
 		this.knight.setVelocityX(
-			directionMultiplier * this.knightMaxVelocity * 1.5
+			directionMultiplier * this.knightMaxVelocity * 1.5,
+			// Halves the collition box height, allowing the knight to roll under smaller gaps
+			this.knight.body.setSize(30, 22, true),
+			this.knight.body.setOffset(50, 43),
+
+			// * 1.5 // Increase the speed by 50% for 3 seconds then reset it
+			setTimeout(() => {
+				this.knight.setVelocityX(
+					directionMultiplier * this.knightMaxVelocity,
+					this.knight.body.setSize(30, 45, true),
+					this.knight.body.setOffset(50, 20)
+				);
+			}, 1500)
 		);
 		this.knight.play('KnightRoll', true);
 		this.canRoll = false;
@@ -211,8 +227,11 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 			this.rollCooldown.remove(false);
 		}
 
-		this.rollCooldown = this.time.delayedCall(500, () => {
-			this.canRoll = true;
+		this.rollCooldown = this.scene.time.addEvent({
+			delay: 500,
+			callback: () => {
+				this.canRoll = true;
+			},
 		});
 	}
 
@@ -296,35 +315,117 @@ export default class Knight extends Phaser.Physics.Arcade.Sprite {
 		return false;
 	}
 
+	/**
+	 * Updates the knight's movement and animations based on player input.
+	 *
+	 * @param {number} time - The current game time.
+	 * @param {number} delta - The time elapsed since the last frame.
+	 */
 	update(time, delta) {
 		// If knight is mid-roll, ignore input
 		if (this.knight.getData('rolling')) {
 			return;
 		}
 
-		// Move left
-		if (this.moveKeys.A.isDown) {
-			this.handleMovement('left');
-		}
-		// Move right
-		else if (this.moveKeys.D.isDown) {
-			this.handleMovement('right');
-		}
-		// Idle
-		else {
-			this.knight.setVelocityX(0);
-			this.knight.anims.play('knightIdle', true);
+		this.handleInput();
+	}
+
+	handleInput() {
+		// Check for attack first to prioritize it
+		if (this.moveKeys.SPACE.isDown) {
+			this.attack();
+		} else if (!this.isAttacking) {
+			// Only allow movement if not attacking
+			if (this.moveKeys.A.isDown) {
+				this.handleMovement('left');
+			} else if (this.moveKeys.D.isDown) {
+				this.handleMovement('right');
+			}
+
+			if (this.moveKeys.W.isDown) {
+				this.jump();
+			}
+			if (this.moveKeys.S.isDown) {
+				this.crouch();
+			}
 		}
 
-		// Jump
-		if (this.moveKeys.W.isDown && this.knight.body.blocked.down) {
+		// If no keys are pressed, return to idle, but only if not attacking
+		if (
+			!this.moveKeys.A.isDown &&
+			!this.moveKeys.D.isDown &&
+			!this.moveKeys.W.isDown &&
+			!this.moveKeys.S.isDown &&
+			!this.moveKeys.SPACE.isDown &&
+			!this.isAttacking
+		) {
+			this.idle();
+		}
+	}
+
+	jump() {
+		if (this.knight.body.blocked.down) {
 			this.knight.setVelocityY(-390);
 			this.knight.anims.play('knightJump', true);
 		}
+	}
 
-		// Crouch
-		if (this.moveKeys.S.isDown && this.knight.body.blocked.down) {
+	crouch() {
+		if (this.knight.body.blocked.down) {
 			this.knight.play('CrouchIdle', true);
 		}
+	}
+
+	attack() {
+		if (!this.isAttacking) {
+			// Only play attack animation if not already attacking
+			this.isAttacking = true; // Set the flag to true when attack starts
+			this.knight.play('knightAttack', true);
+			this.knight.once('animationcomplete', () => {
+				// Reset the flag when attack animation completes
+				this.isAttacking = false;
+			});
+		}
+	}
+
+	idle() {
+		this.knight.setVelocityX(0);
+		this.knight.anims.play('knightIdle', true);
+	}
+
+	// Create player UI
+	createPlayerUI() {
+		this.playerUI = this.scene.add.graphics();
+		this.playerUI.setScrollFactor(0);
+		this.playerUI.fillStyle(0x000000, 0.5);
+		this.playerUI.fillRect(10, 10, 200, 20);
+		this.playerUI.setDepth(100);
+
+		this.playerHealthBar = this.scene.add.graphics();
+		this.playerHealthBar.setScrollFactor(0);
+		this.playerHealthBar.fillStyle(0xff0000, 1);
+		this.playerHealthBar.fillRect(10, 10, 200, 20);
+		this.playerHealthBar.setDepth(100);
+
+		this.playerHealthText = this.scene.add.text(10, 10, '100', {
+			fontSize: '16px',
+			fill: '#fff',
+		});
+		this.playerHealthText.setScrollFactor(0);
+		this.playerHealthText.setDepth(100);
+
+		// Updating and logic for player UI
+		this.scene.events.on('update', () => {
+			this.playerHealthBar.clear();
+			this.playerHealthBar.fillStyle(0xff0000, 1);
+			this.playerHealthBar.fillRect(
+				10,
+				10,
+				(this.knightHealth / 100) * 200,
+				20
+			);
+
+			this.playerHealthText.setText(this.knightHealth);
+		});
 	}
 }

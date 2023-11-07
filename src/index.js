@@ -4,10 +4,8 @@ import { LevelWoods } from './levelWoods';
 
 const config = {
 	type: Phaser.AUTO,
-	parent: 'MyGame',
 	width: 800,
 	height: 400,
-	scene: MyGame,
 	physics: {
 		default: 'arcade',
 		arcade: {
@@ -15,6 +13,6 @@ const config = {
 			debug: true,
 		},
 	},
+	scene: [MyGame, LevelWoods],
 };
-
 const game = new Phaser.Game(config);
